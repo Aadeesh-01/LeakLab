@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#121318</color>
+    <color name="surface">#1E2028</color>
+    <color name="text_primary">#ECEDF2</color>
+    <color name="text_secondary">#A3A8B8</color>
+    <color name="accent">#8C9EFF</color>
+    <color name="on_accent">#10142E</color>
+    <color name="code_bg">#15171D</color>
+    <color name="status_leak">#EF5350</color>
+    <color name="status_ok">#66BB6A</color>
+    <color name="status_waiting">#FFCA28</color>
+    <color name="status_neutral">#7C8294</color>
+</resources>

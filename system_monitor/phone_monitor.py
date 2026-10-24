@@ -13,7 +13,8 @@ Usage:
     python phone_monitor.py                            # watch all apps
     python phone_monitor.py --app com.iiitv.leaklab    # watch one app in detail
     python phone_monitor.py --interval 5 --samples 30  # options
-    python phone_monitor.py --app com.iiitv.leaklab --demo 30   # also press Run all every 30 s
+    python phone_monitor.py --demo 30                  # all apps + press LeakLab's Run all every 30 s
+    python phone_monitor.py --app com.iiitv.leaklab --demo 30   # one app + Run all every 30 s
 """
 import argparse
 import csv
@@ -56,38 +57,54 @@ def find_adb():
     sys.exit("adb not found. Install Android platform-tools or add adb to PATH.")
 
 
+class AdbError(Exception):
+    """The phone could not be reached (cable unplugged, phone locked, debugging not allowed…)."""
+
+
 def adb_run(adb, device, *args):
     cmd = [adb] + (["-s", device] if device else []) + list(args)
     result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if result.returncode != 0:
-        sys.exit("adb error: " + (result.stderr.strip() or "is the phone connected?"))
+        raise AdbError(result.stderr.strip() or "is the phone connected?")
     return result.stdout
+
+
+def show_adb_problem(error):
+    clear_screen()
+    print(f"Phone not reachable: {error}")
+    print("Check the USB cable, unlock the phone and allow USB debugging. Retrying…")
+    print("\nPress Ctrl+C to stop.")
 
 
 def adb_shell(adb, device, *args):
     return adb_run(adb, device, "shell", *args)
 
 
-def read_level2(adb, device, pid):
+def new_level2_state():
+    return {"summary": None, "leaks": {}}      # leaks: leaking class -> latest report
+
+
+def read_level2(adb, device, pid, state):
     """
-    Findings that Level 2 (LeakCanary inside the app) wrote to the system log (logcat).
-    Returns None if the app has not reported an analysis yet, else (last summary, [leaks]).
-    LeakCanary reports each leak only once (in the first heap dump after it happened),
-    so we collect the leaks from ALL analyses since the app started or was last reset.
+    Adds the findings that Level 2 (LeakCanary inside the app) wrote to the system log
+    (logcat) to `state`.
+    - The system log is a small ring buffer: on a busy phone old lines are overwritten
+      within seconds, so we REMEMBER everything we have already seen.
+    - LeakCanary reports each leak only once (in the first heap dump after it happened),
+      so we keep the leaks from all analyses until the app is reset or restarted.
     """
     text = adb_run(adb, device, "logcat", "-d", f"--pid={pid}", "-s", "LeakLab:I")
     messages = [m[1] for m in map(LEVEL2_LINE.search, text.splitlines()) if m]
-    if "RESET" in messages:
+    if "RESET" in messages:                            # Reset pressed in the app
         messages = messages[len(messages) - messages[::-1].index("RESET"):]
-    analyses = [msg for msg in messages if msg.startswith("ANALYSIS")]
-    if not analyses:
-        return None
-    summary = dict(re.findall(r"(\w+)=(\S+)", analyses[-1]))
-    leaks = {}                                          # leaking class -> latest report
-    for m in map(LEVEL2_LEAK.match, messages):
-        if m:
-            leaks[m["object"]] = m.groupdict()
-    return summary, list(leaks.values())
+        state.update(new_level2_state())
+    for msg in messages:
+        if msg.startswith("ANALYSIS"):
+            state["summary"] = dict(re.findall(r"(\w+)=(\S+)", msg))
+        else:
+            m = LEVEL2_LEAK.match(msg)
+            if m:
+                state["leaks"][m["object"]] = m.groupdict()
 
 
 # ---------------- parsing dumpsys output ----------------
@@ -170,14 +187,45 @@ def signed_mb(kb):
     return f"{kb / 1024:+7.1f} MB"
 
 
+# ---------------- demo: press LeakLab's "Run all" from the PC ----------------
+
+DEMO_APP = "com.iiitv.leaklab"
+
+
+def start_run_all(adb, args):
+    adb_shell(adb, args.device, "am", "start", "-n", f"{args.app or DEMO_APP}/.MainActivity",
+              "--ez", "run_all", "true")
+
+
+def maybe_run_demo(adb, args, last_trigger):
+    """--demo N: press "Run all scenarios" every N seconds. Returns the last trigger time."""
+    now = time.time()
+    if args.demo and now - last_trigger >= args.demo:
+        start_run_all(adb, args)
+        return now
+    return last_trigger
+
+
+def demo_line(args):
+    return (f"Demo: pressing \"Run all\" in {args.app or DEMO_APP} every {args.demo:g} s\n"
+            if args.demo else "")
+
+
 # ---------------- mode 1: all apps ----------------
 
 def monitor_all(adb, args, writer):
     history = {}      # name -> {"pid": int, "values": [pss_kb, ...]}
     sample = 0
+    last_trigger = 0.0
     while args.samples == 0 or sample < args.samples:
         started = time.time()
-        procs = parse_all_processes(adb_shell(adb, args.device, "dumpsys", "meminfo"))
+        try:
+            last_trigger = maybe_run_demo(adb, args, last_trigger)
+            procs = parse_all_processes(adb_shell(adb, args.device, "dumpsys", "meminfo"))
+        except AdbError as e:
+            show_adb_problem(e)
+            wait(started, args.interval)
+            continue
         sample += 1
         now = datetime.now().strftime("%H:%M:%S")
 
@@ -201,7 +249,8 @@ def monitor_all(adb, args, writer):
         print(f"LEVEL 1 – PHONE-WIDE MEMORY MONITOR   {now}   sample {sample}   "
               f"({len(procs)} processes, scan took {time.time() - started:.1f} s)")
         print(f"Rule: LEAK? = lowest memory grew by ≥ {LEAK_MB} MB and ≥ {LEAK_PCT}% "
-              f"(first {WINDOW} vs last {WINDOW} samples)\n")
+              f"(first {WINDOW} vs last {WINDOW} samples)")
+        print(demo_line(args))
         print(f"{'Process':<45} {'State':<12} {'PSS now':>10} {'Baseline Δ':>11}  "
               f"{'Trend':<20}  Verdict")
         print("-" * 115)
@@ -218,12 +267,6 @@ def monitor_all(adb, args, writer):
 
 # ---------------- mode 2: one app in detail ----------------
 
-def start_run_all(adb, args):
-    """Demo mode: press LeakLab's "Run all scenarios" button from the PC."""
-    adb_shell(adb, args.device, "am", "start", "-n", f"{args.app}/.MainActivity",
-              "--ez", "run_all", "true")
-
-
 def level1_verdict(history):
     acts = history["activities"]
     if len(acts) < MIN_SAMPLES:
@@ -237,19 +280,24 @@ def level1_verdict(history):
 
 def monitor_app(adb, args, writer):
     history = {"pss": [], "java": [], "activities": []}
+    level2 = new_level2_state()
     pid = None
     sample = 0
     last_trigger = 0.0
     while args.samples == 0 or sample < args.samples:
         started = time.time()
-        if args.demo and started - last_trigger >= args.demo:
-            start_run_all(adb, args)
-            last_trigger = started
-        info = parse_app(adb_shell(adb, args.device, "dumpsys", "meminfo", args.app))
+        try:
+            last_trigger = maybe_run_demo(adb, args, last_trigger)
+            info = parse_app(adb_shell(adb, args.device, "dumpsys", "meminfo", args.app))
+        except AdbError as e:
+            show_adb_problem(e)
+            wait(started, args.interval)
+            continue
         sample += 1
         now = datetime.now().strftime("%H:%M:%S")
         clear_screen()
-        print(f"TWO-LEVEL LEAK MONITOR: {args.app}   {now}   sample {sample}\n")
+        print(f"TWO-LEVEL LEAK MONITOR: {args.app}   {now}   sample {sample}")
+        print(demo_line(args))
 
         if info is None:
             print("App is not running. Start it on the phone.")
@@ -258,10 +306,14 @@ def monitor_app(adb, args, writer):
         if info["pid"] != pid:                        # first sample, or the app restarted
             pid = info["pid"]
             history = {key: [] for key in history}
+            level2 = new_level2_state()
         for key in history:
             history[key].append(info[key])
-        level2 = read_level2(adb, args.device, pid)
-        leaks = level2[1] if level2 else []
+        try:
+            read_level2(adb, args.device, pid, level2)
+        except AdbError:
+            pass                                      # keep what Level 2 reported so far
+        leaks = list(level2["leaks"].values())
         writer.writerow([now, args.app, pid, info["pss"], info["java"], info["native"],
                          info["activities"], info["views"], len(leaks)])
 
@@ -274,10 +326,10 @@ def monitor_app(adb, args, writer):
         print(f"  Views       : {info['views']:>7}")
 
         print("\nLEVEL 2 – what LeakCanary found inside the app (logcat)")
-        if level2 is None:
+        summary = level2["summary"]
+        if summary is None:
             print("  no heap analysis reported yet")
         else:
-            summary = level2[0]
             print(f"  {len(leaks)} leak(s) found   (last heap dump {summary.get('dump_ms', '?')} ms,"
                   f" analysis {summary.get('analysis_ms', '?')} ms)")
             for leak in leaks:
@@ -309,7 +361,8 @@ def main():
     parser.add_argument("--top", type=int, default=20, help="rows to show in all-apps mode")
     parser.add_argument("--device", help="adb serial, if more than one phone is connected")
     parser.add_argument("--demo", type=float, default=0, metavar="SECONDS",
-                        help="LeakLab only: press 'Run all scenarios' from the PC every N seconds")
+                        help="press LeakLab's 'Run all scenarios' from the PC every N seconds "
+                             "(works in both modes)")
     args = parser.parse_args()
 
     if hasattr(sys.stdout, "reconfigure"):

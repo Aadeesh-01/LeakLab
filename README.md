@@ -28,8 +28,11 @@ The two levels are connected through Android's system log: LeakLab writes each f
 (with the tag `LeakLab`), and the PC monitor reads it with `adb logcat`, so one screen
 shows both **which app** and **why**.
 
+Measured on a real phone (moto g64 5G, Android 15):
+- **Phone-wide:** LeakLab was flagged *LEAK?* at the top (+104 MB) among 204 processes.
+- **Level 1 + Level 2:** its live screen count rose 8 → 13, and Level 2 named all 5 causes.
+
 Measured on an Android emulator:
-- **Phone-wide:** LeakLab was flagged *LEAK?* among 132 processes.
 - **Level 1:** its live screen count climbed 5 → 7 → 9 over 3 test runs.
 - **Level 2:** all 5 causes were listed (`EventBus.listeners`, `Thread.target`, …).
 - **In the app:** Detection 7/7, Trace accuracy 5/5, 0 false results.
@@ -139,6 +142,7 @@ cd system_monitor
 python phone_monitor.py                            # every process on the phone
 python phone_monitor.py --app com.iiitv.leaklab    # one app: which (Level 1) + why (Level 2)
 python phone_monitor.py --app com.iiitv.leaklab --demo 45   # also press "Run all" every 45 s
+python phone_monitor.py --demo 30                  # all processes + press "Run all" every 30 s
 ```
 
 It shows each process's memory (PSS), state (Foreground / Visible / Cached …), a trend

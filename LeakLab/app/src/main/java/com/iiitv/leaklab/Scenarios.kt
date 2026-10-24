@@ -84,10 +84,11 @@ fun scenarioFor(activityClass: Class<*>) = SCENARIOS.first { it.activityClass ==
 /** Common screen for every scenario: shows what the code does and a Close button. */
 open class ScenarioActivity : Activity() {
 
-    // Pretend screen image (~2 MB), like the bitmaps real screens hold. A leaked screen
-    // keeps it in memory too, so the leak is big enough for the Level 1 OS monitor to see.
+    // Pretend screen image (~4 MB), like the bitmaps real screens hold. A leaked screen
+    // keeps it in memory too, so the leak is big enough for the Level 1 OS monitor to see
+    // even on a real phone where the app already uses 100+ MB.
     // fill() touches every page so the OS really counts it as used memory.
-    private val screenImage = ByteArray(2 * 1024 * 1024).also { it.fill(1) }
+    private val screenImage = ByteArray(4 * 1024 * 1024).also { it.fill(1) }
 
     companion object {
         /** Set by "Run all": the screen closes itself right after it appears. */

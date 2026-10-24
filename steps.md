@@ -225,8 +225,16 @@ of how much memory *every* process uses, and `adb` lets us read that from the PC
    `adb shell am start -n com.iiitv.leaklab/.MainActivity --ez run_all true`.
    The monitor's `--demo N` option sends this every N seconds.
 
-Each LeakLab test screen holds a 2 MB "screen image" (like a real bitmap), so a leaked
-screen is big enough to show up in the OS numbers.
+Each LeakLab test screen holds a 4 MB "screen image" (like a real bitmap), so a leaked
+screen is big enough to show up in the OS numbers, even on a real phone where the app
+already uses 100+ MB. With the 10 % rule, 2 MB was not enough there.
+
+Two robustness fixes came from testing on a real phone:
+- **Remember Level 2's findings.** The system log is a small ring buffer, and on a phone
+  with ~200 processes LeakLab's lines are overwritten within seconds. So the monitor keeps
+  what it has already read.
+- **Don't crash when the phone disconnects.** If `adb` fails (cable, screen lock, "Allow
+  USB debugging?"), it shows *Phone not reachable – retrying…* and continues.
 
 ### Getting one heap dump with all the leaks
 
@@ -245,11 +253,16 @@ Result: every run's analysis contains all 5 leaks.
 **Run it:**
 ```bash
 cd system_monitor
-python phone_monitor.py                                         # phone-wide: which app?
+python phone_monitor.py --demo 30                               # phone-wide: which app?
 python phone_monitor.py --app com.iiitv.leaklab --demo 45       # one app: which + why
 ```
-Measured on an emulator:
-- **Phone-wide:** LeakLab was flagged *LEAK?* (+37.5 MB baseline) among 132 processes.
+Measured on a **real phone** (moto g64 5G, Android 15):
+- **Phone-wide:** LeakLab was flagged *LEAK?* at the top (+104 MB) among 204 processes.
+  Google Play Services (+34 MB) and a Motorola service (+7 MB) were also flagged.
+  Level 1 cannot tell a leak from a growing cache, so they remain suspects.
+- **App mode:** LeakLab's live screens rose 8 → 13, and Level 2 named all 5 causes.
+
+Measured on an **emulator** (Android 17):
 - **App mode:** the Activity count went 5 → 7 → 9 over 3 runs, and Level 2 listed all 5
   causes. The app showed Detection 7/7, Trace accuracy 5/5, and 0 false results.
 
@@ -280,6 +293,10 @@ Measured on an emulator:
 - *What do the states (Foreground, Cached …) mean?* They are the OOM priority. When RAM
   is low, Android's Low Memory Killer kills Cached processes first, so a leaking app is
   killed and restarted more often.
+- *Level 1 also flagged Google Play Services. Is that a leak?* Not necessarily. Level 1
+  only sees how much memory a process uses, so a growing cache looks the same as a leak
+  (a possible false positive). Level 1 is a screening step that narrows ~200 processes
+  down to a few suspects; Level 2, inside the app, confirms the leak and names the cause.
 - *How do the two levels talk to each other?* Through Android's system log (logcat): the
   app writes its findings with the tag `LeakLab`, and the PC reads them with
   `adb logcat`. The PC can read the log, but not the app's memory.

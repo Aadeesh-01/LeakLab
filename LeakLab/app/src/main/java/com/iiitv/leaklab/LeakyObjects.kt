@@ -30,4 +30,5 @@ fun clearGlobalReferences() {
     AppSingleton.lastActivity = null
     EventBus.listeners.clear()
     ScreenCache.screens.clear()
+    PlayerRegistry.players.clear()
 }

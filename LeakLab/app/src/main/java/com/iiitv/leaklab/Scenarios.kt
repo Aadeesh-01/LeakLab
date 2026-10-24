@@ -7,7 +7,9 @@ import android.widget.TextView
 
 /**
  * One controlled test case.
- * culprit = a word that must appear in the leak trace if LeakCanary found the real cause.
+ * culprit       = the reference ("Class.field") that really causes the leak. The leak trace
+ *                 is correct only if this exact reference is part of the reference chain.
+ * watchedClass  = the object that should be freed (the activity itself, or a custom object).
  */
 data class Scenario(
     val activityClass: Class<out Activity>,
@@ -16,6 +18,7 @@ data class Scenario(
     val why: String,
     val isRealLeak: Boolean,
     val culprit: String?,
+    val watchedClass: Class<*> = activityClass,
 )
 
 val SCENARIOS = listOf(
@@ -25,7 +28,7 @@ val SCENARIOS = listOf(
         "AppSingleton.lastActivity = this",
         "AppSingleton is a Kotlin object, stored in a static field. Static fields are GC roots, " +
             "so the activity stays reachable forever.",
-        true, "lastActivity",
+        true, "AppSingleton.lastActivity",
     ),
     Scenario(
         ListenerLeakActivity::class.java,
@@ -33,14 +36,14 @@ val SCENARIOS = listOf(
         "EventBus.register { event -> title = event }\n// no unregister in onDestroy()",
         "The lambda uses `title`, so it holds a reference to the activity. " +
             "EventBus (a GC root) keeps the lambda in its listeners list.",
-        true, "listeners",
+        true, "EventBus.listeners",
     ),
     Scenario(
         CacheLeakActivity::class.java,
         "Puts itself in a global cache",
         "ScreenCache.screens[\"cache_screen\"] = this",
         "The global HashMap is never cleared, so the activity can never be freed.",
-        true, "screens",
+        true, "ScreenCache.screens",
     ),
     Scenario(
         ThreadLeakActivity::class.java,
@@ -48,7 +51,17 @@ val SCENARIOS = listOf(
         "Thread {\n    Thread.sleep(10 minutes)\n    runOnUiThread { title = \"done\" }\n}.start()",
         "A running thread is a GC root. Its Runnable (the lambda) holds the activity " +
             "until the thread finishes, 10 minutes later.",
-        true, "Thread",
+        true, "Thread.target",
+    ),
+    Scenario(
+        PlayerLeakActivity::class.java,
+        "Custom object kept after release()",
+        "player.release()   // we ask LeakCanary to watch it\n" +
+            "PlayerRegistry.players.add(player)   // but it is still stored",
+        "Not an activity: our own MusicPlayer object. After release() it should be freed, " +
+            "but the global \"recently played\" list still holds it.",
+        true, "PlayerRegistry.players",
+        watchedClass = MusicPlayer::class.java,
     ),
     Scenario(
         FixedListenerActivity::class.java,
@@ -70,6 +83,11 @@ fun scenarioFor(activityClass: Class<*>) = SCENARIOS.first { it.activityClass ==
 
 /** Common screen for every scenario: shows what the code does and a Close button. */
 open class ScenarioActivity : Activity() {
+
+    // Pretend screen image (~2 MB), like the bitmaps real screens hold. A leaked screen
+    // keeps it in memory too, so the leak is big enough for the Level 1 OS monitor to see.
+    // fill() touches every page so the OS really counts it as used memory.
+    private val screenImage = ByteArray(2 * 1024 * 1024).also { it.fill(1) }
 
     companion object {
         /** Set by "Run all": the screen closes itself right after it appears. */
@@ -138,6 +156,20 @@ class ThreadLeakActivity : ScenarioActivity() {
             Thread.sleep(10 * 60 * 1000L)          // pretend a slow download (10 minutes)
             runOnUiThread { title = "Download done" }
         }.start()
+    }
+}
+
+class PlayerLeakActivity : ScenarioActivity() {
+    private val player = MusicPlayer("song.mp3")
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        PlayerRegistry.players.add(player)             // "recently played" – never removed
+    }
+
+    override fun onDestroy() {
+        player.release()                               // lifecycle of the player ends here
+        super.onDestroy()
     }
 }
 

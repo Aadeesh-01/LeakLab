@@ -51,6 +51,17 @@
         android:textSize="13sp"
         android:textStyle="bold" />
 
+    <!-- Where the leak comes from: app, screen and leaking object -->
+    <TextView
+        android:id="@+id/source"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:lineSpacingExtra="2dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/trace"
         style="@style/LeakLab.Code"

@@ -80,7 +80,7 @@ class Worker(threading.Thread):
         """Every process on the phone (same as phone_monitor.monitor_all)."""
         started = time.time()
         procs = pm.parse_all_processes(
-            pm.adb_shell(self.adb, self.settings.device, "dumpsys", "meminfo"))
+            pm.adb_shell(self.adb, self.settings.device, "dumpsys", "-t", "60", "meminfo"))
         now = datetime.now().strftime("%H:%M:%S")
         history = state.setdefault("history", {})
         state["sample"] = state.get("sample", 0) + 1

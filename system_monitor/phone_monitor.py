@@ -221,7 +221,7 @@ def monitor_all(adb, args, writer):
         started = time.time()
         try:
             last_trigger = maybe_run_demo(adb, args, last_trigger)
-            procs = parse_all_processes(adb_shell(adb, args.device, "dumpsys", "meminfo"))
+            procs = parse_all_processes(adb_shell(adb, args.device, "dumpsys", "-t", "60", "meminfo"))
         except AdbError as e:
             show_adb_problem(e)
             wait(started, args.interval)

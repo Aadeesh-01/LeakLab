@@ -11,7 +11,64 @@ Level 1 finds **which app** is leaking. Level 2 (LeakCanary inside the app, see
 
 - Python 3.8+ (standard library only, nothing to install)
 - `adb` (comes with Android Studio; the script finds it automatically)
-- A phone with **USB debugging** enabled, or an emulator
+- A phone with **USB debugging** or **Wireless debugging** enabled, or an emulator
+
+## Connecting the phone
+
+The monitor talks to the phone through `adb`, so adb has to see the phone first. Turn on
+**Developer options** by tapping *Settings → About phone → Build number* 7 times. Then
+connect the phone in one of two ways.
+
+### Option A: USB cable
+
+1. Open **Settings → System → Developer options** and turn on **USB debugging**.
+2. Plug in the cable. Pull down the notifications, tap *Charging this device via USB*
+   and choose **File transfer**. You can also set **Default USB configuration → File
+   transfer** in Developer options.
+3. Tap **Allow** on the *Allow USB debugging?* prompt. Tick *Always allow from this
+   computer*.
+
+If the phone only charges and does not appear under *This PC* in File Explorer, the
+cable is probably **charging-only** and has no data wires. Use the phone's original
+cable or another port, or use Option B.
+
+### Option B: Wireless debugging (no cable, Android 11+)
+
+The phone and the laptop must be on the **same Wi-Fi** network.
+
+1. Open **Developer options → Wireless debugging** and turn it on.
+2. Tap **Pair device with pairing code**. Keep that popup open: the code expires
+   when it closes.
+3. On the laptop, enter the IP:port and 6-digit code shown in the popup:
+
+   ```powershell
+   $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+   & $adb pair 192.168.1.20:37045 123456     # popup's IP:port + pairing code
+   & $adb devices                            # usually connects by itself after pairing
+   ```
+
+4. If `adb devices` is still empty, connect using the IP:port shown on the **main**
+   Wireless debugging screen. This port is different from the pairing port:
+
+   ```powershell
+   & $adb connect 192.168.1.20:41583
+   ```
+
+Pairing is needed only once per laptop. Next time, turn on Wireless debugging and run
+`adb devices`. If the phone changes Wi-Fi or restarts, connect again (step 4, which
+uses a new port each time).
+
+### Check the connection
+
+```powershell
+& $adb devices
+```
+
+You should see a line ending in `device`. `unauthorized` means you need to tap **Allow**
+on the phone. An empty list means the phone is not connected: check the cable or Wi-Fi.
+
+When you have finished testing, turn **USB debugging** and **Wireless debugging** off
+again.
 
 ## Usage
 
@@ -30,8 +87,14 @@ Options: `--interval` (seconds, default 10), `--samples` (0 = until Ctrl+C), `--
 `--demo N` (press LeakLab's "Run all scenarios" from the PC every N seconds; works in
 both modes).
 
-If the phone disconnects (cable, screen lock, "Allow USB debugging?" prompt), the monitor
-shows *Phone not reachable – retrying…* and continues by itself once the phone is back.
+If the phone disconnects (cable, Wi-Fi, screen lock, "Allow USB debugging?" prompt), the
+monitor shows *Phone not reachable – retrying…* and continues by itself once the phone is
+back.
+
+On a busy phone (about 200 processes), building the memory report can take more than
+Android's default 10 s limit, and the report then gets cut off. The monitor therefore
+runs `dumpsys -t 60 meminfo`, which allows up to 60 s, so every process gets its real
+state.
 
 ## Window (GUI) version
 

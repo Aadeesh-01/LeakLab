@@ -81,8 +81,9 @@ ThreadLeakActivity  ← LEAKING
 
 ## How to run
 
-**Requirements:** Android Studio, JDK 17, and an Android phone (with USB debugging
-enabled) or an emulator running API 24 or higher.
+**Requirements:** Android Studio, JDK 17, and an Android phone (with USB or Wireless
+debugging enabled, see [Connecting the phone](system_monitor/README.md#connecting-the-phone))
+or an emulator running API 24 or higher.
 
 1. Clone the repo and open the **`LeakLab`** folder in Android Studio.
 2. Let Gradle sync, then press **Run**.
@@ -108,7 +109,8 @@ cd LeakLab
 ├── OS_abstract.pdf             ← project abstract
 ├── python_prototype/           ← the same idea in plain Python (for explaining the concept)
 ├── system_monitor/             ← LEVEL 1: phone-wide memory monitor (Python + adb)
-│   ├── phone_monitor.py
+│   ├── phone_monitor.py        ← measuring logic + terminal version
+│   ├── monitor_gui.py          ← the same monitor in a window (Tkinter)
 │   └── README.md
 └── LeakLab/                    ← LEVEL 2: Android Studio project
     └── app/src/main/
@@ -135,10 +137,20 @@ python main.py
 
 ## Level 1 – Phone-wide monitor
 
-With the phone connected over USB (USB debugging on):
+Connect the phone over **USB** (USB debugging on, USB mode *File transfer*) or over
+**Wi-Fi** (Wireless debugging + `adb pair`), and check that `adb devices` lists it.
+Step-by-step setup: [Connecting the phone](system_monitor/README.md#connecting-the-phone).
 
 ```bash
 cd system_monitor
+python monitor_gui.py                              # window version (recommended for demos)
+```
+
+The window has an *All apps* table, where suspects are red and you can double-click to
+drill down, and a *One app* view with Level 1 charts, Level 2's leak causes and a
+RESULT box. The same monitor also runs in the terminal:
+
+```bash
 python phone_monitor.py                            # every process on the phone
 python phone_monitor.py --app com.iiitv.leaklab    # one app: which (Level 1) + why (Level 2)
 python phone_monitor.py --app com.iiitv.leaklab --demo 45   # also press "Run all" every 45 s

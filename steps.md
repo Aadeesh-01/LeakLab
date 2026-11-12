@@ -253,9 +253,17 @@ Result: every run's analysis contains all 5 leaks.
 **Run it:**
 ```bash
 cd system_monitor
+python monitor_gui.py                                           # window version
 python phone_monitor.py --demo 30                               # phone-wide: which app?
 python phone_monitor.py --app com.iiitv.leaklab --demo 45       # one app: which + why
 ```
+
+**Window version (`monitor_gui.py`):** built with Tkinter, which comes with Python. It
+reuses the functions of `phone_monitor.py` and only draws the results: a table of all
+processes (double-click to drill down), and a one-app view with live charts, Level 2's
+leak causes and a RESULT box. Scanning runs in a **background thread** and sends results
+to the window through a queue, because a phone-wide scan takes 5–10 s and would freeze
+the window. That is the producer–consumer pattern from OS.
 Measured on a **real phone** (moto g64 5G, Android 15):
 - **Phone-wide:** LeakLab was flagged *LEAK?* at the top (+104 MB) among 204 processes.
   Google Play Services (+34 MB) and a Motorola service (+7 MB) were also flagged.

@@ -33,6 +33,27 @@ both modes).
 If the phone disconnects (cable, screen lock, "Allow USB debugging?" prompt), the monitor
 shows *Phone not reachable – retrying…* and continues by itself once the phone is back.
 
+## Window (GUI) version
+
+```bash
+python monitor_gui.py
+```
+
+The same monitor in a window, made with Tkinter, which comes with Python, so there is
+nothing to install:
+
+- **Top bar:** choose *All apps* or *One app* (package name), the sampling interval, and
+  optionally *Demo: press LeakLab's Run all every N s*. Then press **Start**.
+- **All apps:** a table of every process with its state, memory, baseline growth, trend
+  and verdict. Suspects are shown in red. **Double-click** an app to open it in detail.
+- **One app:** Level 1 numbers with live charts of memory and of screens still in memory,
+  Level 2's table of leaks and their causes, and a **RESULT** box with *which* and *why*.
+
+`monitor_gui.py` only draws the window. All the measuring logic is reused from
+`phone_monitor.py`. The scanning runs in a background thread, because one phone-wide
+scan takes 5–10 s and would otherwise freeze the window. Every run is also saved to
+`logs/*.csv`.
+
 To press "Run all" once from the PC:
 
 ```bash

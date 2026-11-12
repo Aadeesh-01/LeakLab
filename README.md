@@ -106,6 +106,7 @@ cd LeakLab
 ```
 ├── README.md
 ├── steps.md                    ← step-by-step implementation guide + viva notes
+├── SYSTEM_DESIGN.md            ← architecture, workflows, detection criteria, function reference
 ├── OS_abstract.pdf             ← project abstract
 ├── python_prototype/           ← the same idea in plain Python (for explaining the concept)
 ├── system_monitor/             ← LEVEL 1: phone-wide memory monitor (Python + adb)

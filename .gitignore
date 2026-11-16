@@ -32,3 +32,12 @@ desktop.ini
 
 # ---------- Level 1 monitor output ----------
 system_monitor/logs/
+
+# ---------- Templates and working files (not in the repo) ----------
+ppt TEMPLATE.pptx
+IEEE-paper-format-template.docx
+LeakLab_Presentation.pptx
+paper/
+os_paper*.pdf
+
+# The final submission PDFs (CS363_46_..._PPT.pdf / _Report.pdf) ARE committed.

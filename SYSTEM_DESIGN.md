@@ -48,26 +48,26 @@ flowchart LR
             SC["7 ScenarioActivity screens"]
             LC["LeakCanary<br/>(watcher + heap analysis)"]
             LR["LeakReport<br/>(our EventListener)"]
-            SC -- "markOpened / markClosed" --> LR
-            SC -- "onDestroy (auto-watched)" --> LC
-            LC -- "onEvent()" --> LR
-            LR -- "onChange()" --> UI
+            SC -->|"markOpened / markClosed"| LR
+            SC -->|"onDestroy (auto-watched)"| LC
+            LC -->|"onEvent()"| LR
+            LR -->|"onChange()"| UI
         end
         DS["dumpsys meminfo<br/>(OS memory accounting)"]
         LOG["logcat<br/>(system log ring buffer)"]
-        LR -- "Log.i(&quot;LeakLab&quot;, …)" --> LOG
+        LR -->|"Log.i with tag LeakLab"| LOG
     end
     subgraph PC["PC (Python)"]
         PM["phone_monitor.py<br/>(logic + terminal UI)"]
         GUI["monitor_gui.py<br/>(Tkinter window)"]
         CSV[("logs/*.csv")]
-        GUI -- "imports" --> PM
+        GUI -->|"imports"| PM
         PM --> CSV
         GUI --> CSV
     end
-    PM -- "adb shell dumpsys meminfo" --> DS
-    PM -- "adb logcat -s LeakLab:I" --> LOG
-    PM -- "adb shell am start --ez run_all true" --> UI
+    PM -->|"adb shell dumpsys meminfo"| DS
+    PM -->|"adb logcat -s LeakLab:I"| LOG
+    PM -->|"adb shell am start --ez run_all true"| UI
 ```
 
 ### 2.2 Components
@@ -142,8 +142,8 @@ flowchart TD
     D --> E["each screen: onResume → finish() after 300 ms<br/>onDestroy → LeakReport.markClosed()"]
     B --> F["LeakReport.dumpHeapWhenRunFinished(start)"]
     F --> G{"all 7 closed after start?<br/>or 60 s timeout"}
-    G -- no --> H["check again in 500 ms"] --> G
-    G -- yes --> I["schedule at last close + 5 s + 1 s"]
+    G -->|no| H["check again in 500 ms"] --> G
+    G -->|yes| I["schedule at last close + 5 s + 1 s"]
     I --> J["LeakCanary.dumpHeap()"]
     I --> K["LeakLabApp.setAutoHeapDump(true)"]
     J --> L["analysis → LeakReport.onEvent → collectLeaks"]
@@ -155,7 +155,7 @@ flowchart TD
 flowchart TD
     A["start of sample"] --> B["maybe_run_demo()<br/>(press Run all every N s, if --demo)"]
     B --> C["adb shell dumpsys -t 60 meminfo"]
-    C -- AdbError --> X["show 'Phone not reachable – retrying…'"] --> W
+    C -->|AdbError| X["show 'Phone not reachable – retrying…'"] --> W
     C --> D["parse_all_processes() → {name: (pid, pss_kb, state)}"]
     D --> E["append PSS to each process's history<br/>(new PID = new history)"]
     E --> F["verdict() + baseline_growth() per process"]
@@ -169,12 +169,12 @@ flowchart TD
 ```mermaid
 flowchart TD
     A["start of sample"] --> B["maybe_run_demo()"]
-    B --> C["adb shell dumpsys meminfo &lt;package&gt;"]
+    B --> C["adb shell dumpsys meminfo PACKAGE"]
     C --> D["parse_app() → pid, pss, java, native, activities, views"]
-    D -- "None (app not running)" --> N["show 'App is not running'"]
+    D -->|"None (app not running)"| N["show 'App is not running'"]
     D --> E{"PID changed?"}
-    E -- yes --> F["reset history and Level 2 state"]
-    E -- no --> G
+    E -->|yes| F["reset history and Level 2 state"]
+    E -->|no| G
     F --> G["append pss / java / activities to history"]
     G --> H["read_level2(): adb logcat -d --pid=PID -s LeakLab:I"]
     H --> I["level1_verdict(history)"]
@@ -255,6 +255,23 @@ For example, `Thread.target` in the ThreadLeakActivity trace equals the expected
 
 ### 4.2 Level 1 (phone-wide, from outside)
 
+#### What one snapshot contains
+
+Every interval (10 s by default), Level 1 takes one **snapshot** of the phone's memory.
+
+| Snapshot | Source | Fields recorded | Used for |
+|---|---|---|---|
+| Phone-wide (every process) | `adb shell dumpsys -t 60 meminfo` | process name, PID, **PSS (KB)**, state (OOM priority: Foreground, Visible, Perceptible, Services, Cached …) | PSS → verdict; PID → detect restarts; state → shown for context |
+| One app | `adb shell dumpsys meminfo <package>` | PID, **Total PSS**, Java heap, native heap, **Activities**, Views | Total PSS and Activities → verdict; the others are shown and logged |
+| One app, Level 2 | `adb logcat -d --pid=<pid> -s LeakLab:I` | `ANALYSIS` summary, `LEAK` lines (leaking object, cause, screen) | The **why** part of the result |
+
+**Not in the snapshot: battery and storage.** A memory leak keeps objects in **RAM**.
+It does not by itself drain the battery or fill storage, and both change for many
+unrelated reasons (screen brightness, network, downloads). Using them would add noise,
+not evidence. So the verdict is decided **only by RAM** (PSS and the Activity count).
+
+#### Decision rule
+
 For one process with PSS samples `m1 … mn` (in KB), `WINDOW = 3`:
 
 ```
@@ -268,6 +285,15 @@ start            s = min(m1, m2, m3)
 | `LEAK?` | g ≥ 5 MB **and** g ≥ 10 % of s |
 | `growing` | g > 1 MB (but not LEAK?) |
 | `stable` | otherwise |
+
+**Why both 5 MB and 10 %:**
+- **Small app** that starts at 30 MB: 10 % is only 3 MB, so the 5 MB limit applies. Small
+  ups and downs are not flagged.
+- **Big process** that starts at 1.7 GB: 10 % is 170 MB, so its normal swings of
+  10–20 MB are not flagged.
+
+A process needs both, so it is flagged only when it grows by a meaningful amount **and**
+by a meaningful share of its own size.
 
 Rows are sorted LEAK? → growing → stable → measuring, then by growth (largest first).
 

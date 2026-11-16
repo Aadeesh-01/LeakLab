@@ -206,7 +206,9 @@ class MonitorApp:
             tree.column(col, width=width, anchor=anchor)
         for verdict, color in COLORS.items():
             tree.tag_configure(verdict, foreground=color)
-        tree.tag_configure("LEAK?", foreground=COLORS["LEAK?"], font=("Segoe UI", 9, "bold"))
+        # Segoe UI has no ▁▂▃ bar characters, and bold text gets no fallback font on Windows,
+        # so bold rows use Segoe UI Symbol, which has every bar character.
+        tree.tag_configure("LEAK?", foreground=COLORS["LEAK?"], font=("Segoe UI Symbol", 9, "bold"))
         scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=scroll.set)
         tree.pack(side="left", fill="both", expand=True)
